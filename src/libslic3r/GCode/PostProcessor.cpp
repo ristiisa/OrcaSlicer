@@ -81,10 +81,9 @@ static DWORD execute_process_winapi(const std::wstring &command_line)
 	STARTUPINFOW startup_info;
 	memset(&startup_info, 0, sizeof(startup_info));
 	startup_info.cb			 = sizeof(STARTUPINFO);
-#if 0
 	startup_info.dwFlags	 = STARTF_USESHOWWINDOW;
 	startup_info.wShowWindow = SW_HIDE;
-#endif
+
 	PROCESS_INFORMATION process_info;
 	if (! ::CreateProcessW(
             nullptr /* lpApplicationName */, (LPWSTR)command_line.c_str(), nullptr /* lpProcessAttributes */, nullptr /* lpThreadAttributes */, false /* bInheritHandles */,
