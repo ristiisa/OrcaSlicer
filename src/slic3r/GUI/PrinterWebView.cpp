@@ -11,6 +11,7 @@
 #include <wx/string.h>
 #include <wx/toolbar.h>
 #include <wx/textdlg.h>
+#include <wx/menu.h>
 
 #include <slic3r/GUI/Widgets/WebView.hpp>
 #include <wx/webview.h>
@@ -22,12 +23,30 @@ namespace GUI {
 
 PrinterWebView::PrinterWebView(wxWindow *parent)
         : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxDefaultSize)
+        , m_browser(nullptr)
+        , m_topsizer(nullptr)
+        , m_zoomFactor(100)
+        , m_apikey_sent(false)
  {
 
-    wxBoxSizer* topsizer = new wxBoxSizer(wxVERTICAL);
+    m_topsizer = new wxBoxSizer(wxVERTICAL);
+    SetSizer(m_topsizer);
 
-      // Create the webview
-    m_browser = WebView::CreateWebView(this, "");
+    CreateWebView();
+
+    update_mode();
+
+    //Connect the idle events
+    Bind(wxEVT_CLOSE_WINDOW, &PrinterWebView::OnClose, this);
+ }
+
+void PrinterWebView::CreateWebView()
+{
+    if (m_browser != nullptr)
+        return;
+
+    wxString url = m_current_url.IsEmpty() ? "" : m_current_url;
+    m_browser = WebView::CreateWebView(this, url);
     if (m_browser == nullptr) {
         wxLogError("Could not init m_browser");
         return;
@@ -36,29 +55,9 @@ PrinterWebView::PrinterWebView(wxWindow *parent)
     m_browser->Bind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);
     m_browser->Bind(wxEVT_WEBVIEW_LOADED, &PrinterWebView::OnLoaded, this);
 
-    SetSizer(topsizer);
-
-    topsizer->Add(m_browser, wxSizerFlags().Expand().Proportion(1));
-
-    update_mode();
-
-    // Log backend information
-    /* m_browser->GetUserAgent() may lead crash
-    if (wxGetApp().get_mode() == comDevelop) {
-        wxLogMessage(wxWebView::GetBackendVersionInfo().ToString());
-        wxLogMessage("Backend: %s Version: %s", m_browser->GetClassInfo()->GetClassName(),
-            wxWebView::GetBackendVersionInfo().ToString());
-        wxLogMessage("User Agent: %s", m_browser->GetUserAgent());
-    }
-    */
-
-    //Zoom
-    m_zoomFactor = 100;
-
-    //Connect the idle events
-    Bind(wxEVT_CLOSE_WINDOW, &PrinterWebView::OnClose, this);
-
- }
+    m_topsizer->Add(m_browser, wxSizerFlags().Expand().Proportion(1));
+    m_topsizer->Layout();
+}
 
 PrinterWebView::~PrinterWebView()
 {
@@ -71,12 +70,15 @@ PrinterWebView::~PrinterWebView()
 
 void PrinterWebView::load_url(wxString& url, wxString apikey)
 {
-//    this->Show();
-//    this->Raise();
-    if (m_browser == nullptr)
+    if (m_browser == nullptr) {
+        // Store URL for when webview is reloaded
+        m_current_url = url;
+        m_apikey = apikey;
         return;
+    }
     m_apikey = apikey;
     m_apikey_sent = false;
+    m_current_url = url;
 
     if (this->IsShown()) {
         m_url_deferred.clear();
@@ -84,13 +86,12 @@ void PrinterWebView::load_url(wxString& url, wxString apikey)
     } else {
         m_url_deferred = url;
     }
-    //m_browser->SetFocus();
     UpdateState();
 }
 
 bool PrinterWebView::Show(bool show)
 {
-    if (show && !m_url_deferred.empty()) {
+    if (show && m_browser != nullptr && !m_url_deferred.empty()) {
         m_browser->LoadURL(m_url_deferred);
         m_url_deferred.clear();
     }
@@ -99,12 +100,51 @@ bool PrinterWebView::Show(bool show)
 
 void PrinterWebView::reload()
 {
-    m_browser->Reload();
+    if (m_browser != nullptr)
+        m_browser->Reload();
 }
 
 void PrinterWebView::update_mode()
 {
-    m_browser->EnableAccessToDevTools(wxGetApp().app_config->get_bool("developer_mode"));
+    if (m_browser != nullptr)
+        m_browser->EnableAccessToDevTools(wxGetApp().app_config->get_bool("developer_mode"));
+}
+
+void PrinterWebView::UnloadWebView()
+{
+    if (m_browser == nullptr)
+        return;
+
+    // Store current URL before destroying
+    m_current_url = m_browser->GetCurrentURL();
+
+    m_browser->Unbind(wxEVT_WEBVIEW_ERROR, &PrinterWebView::OnError, this);
+    m_browser->Unbind(wxEVT_WEBVIEW_LOADED, &PrinterWebView::OnLoaded, this);
+
+    m_topsizer->Detach(m_browser);
+    m_browser->Destroy();
+    m_browser = nullptr;
+
+    m_topsizer->Layout();
+    Refresh();
+
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": WebView unloaded to free memory";
+}
+
+void PrinterWebView::ReloadWebView()
+{
+    if (m_browser != nullptr)
+        return;
+
+    CreateWebView();
+    update_mode();
+
+    if (m_browser != nullptr && !m_current_url.IsEmpty()) {
+        m_apikey_sent = false;
+        m_browser->LoadURL(m_current_url);
+    }
+
+    BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": WebView reloaded";
 }
 
 /**
@@ -124,6 +164,8 @@ void PrinterWebView::OnClose(wxCloseEvent& evt)
 void PrinterWebView::SendAPIKey()
 {
     if (m_apikey_sent || m_apikey.IsEmpty())
+        return;
+    if (m_browser == nullptr)
         return;
     m_apikey_sent   = true;
     wxString script = wxString::Format(R"(

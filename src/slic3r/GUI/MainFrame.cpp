@@ -2847,6 +2847,23 @@ void MainFrame::init_menubar_as_editor()
             this, [this]() { return m_tabpanel->GetSelection() == TabPosition::tp3DEditor; },
             [this]() { return wxGetApp().show_outline(); }, this);
 
+        viewMenu->AppendSeparator();
+        append_menu_item(viewMenu, wxID_ANY, _L("Unload Device WebView"), _L("Unload the device tab WebView to free memory"),
+            [this](wxCommandEvent&) {
+                if(m_printer_view && m_printer_view->IsWebViewLoaded()) {
+                    m_printer_view->UnloadWebView();
+                }
+            }, "", this,
+            [this]() { return m_printer_view && m_printer_view->IsWebViewLoaded(); }, this);
+
+        append_menu_item(viewMenu, wxID_ANY, _L("Load Device WebView"), _L("Reload the device tab WebView"),
+            [this](wxCommandEvent&) {
+                if(m_printer_view && !m_printer_view->IsWebViewLoaded()) {
+                    m_printer_view->ReloadWebView();
+                }
+            }, "", this,
+            [this]() { return m_printer_view && !m_printer_view->IsWebViewLoaded(); }, this);
+
         /*viewMenu->AppendSeparator();
         append_menu_check_item(viewMenu, wxID_ANY, _L("Show &Wireframe") + "\t" + ctrl + shift + _L("Enter"), _L("Show wireframes in 3D scene."),
             [this](wxCommandEvent&) { m_plater->toggle_show_wireframe(); m_plater->get_current_canvas3D()->post_event(SimpleEvent(wxEVT_PAINT)); }, this,

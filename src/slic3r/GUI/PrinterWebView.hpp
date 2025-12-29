@@ -46,15 +46,23 @@ public:
 
     bool Show(bool show = true) override;
 
+    // Webview memory management
+    void UnloadWebView();
+    void ReloadWebView();
+    bool IsWebViewLoaded() const { return m_browser != nullptr; }
+
 private:
     void SendAPIKey();
+    void CreateWebView();
 
-    wxWebView* m_browser;
-    long m_zoomFactor;
+    wxWebView* m_browser = nullptr;
+    wxBoxSizer* m_topsizer = nullptr;
+    long m_zoomFactor = 100;
     wxString m_apikey;
-    bool m_apikey_sent;
+    bool m_apikey_sent = false;
 
     wxString m_url_deferred;
+    wxString m_current_url;  // Track current URL for reload after unload
 
     // DECLARE_EVENT_TABLE()
 };
